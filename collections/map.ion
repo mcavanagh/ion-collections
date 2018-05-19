@@ -1,0 +1,268 @@
+import libc { calloc, free }
+
+const MAP_LOAD_FACTOR = 0.9;
+const MAP_MIN_SIZE = 8;
+var DEFAULT_HASH_FN = hash_ptr;
+var DEFAULT_KEY_CMP_FN = cmp_ptr;
+
+struct MapEntry
+{
+	key, val: void*;
+	hash: usize;
+}
+
+typedef HashFn   = func(key: void*): usize;
+typedef KeyCmpFn = func(key: void*, test: void*): bool;
+
+struct Map
+{
+	hash_fn: HashFn;
+	key_cmp_fn: KeyCmpFn;
+	entries: MapEntry*;
+	size: usize;
+	cap: usize;
+	mask: usize;
+	resize_at: usize;
+}
+
+
+func map__ideal_ix(map: Map*, hash: usize): usize
+{
+	return hash & map.mask;
+}
+
+func map__probe_len(map: Map*, hash: usize, ix: usize): usize
+{
+	return (ix + map.cap - map__ideal_ix(map, hash)) & map.mask;
+}
+
+func map_entry_is_empty(entry: MapEntry*): bool
+{
+	return entry.hash == 0;
+}
+
+func map__entry_clear(m: Map*, ix: usize)
+{
+	m.entries[ix].hash = 0;
+}
+
+func map_clear(m: Map*)
+{
+	if (m.size == 0)
+	{
+		return;
+	}
+
+	for (i := 0; i < m.cap; i++)
+	{
+		map__entry_clear(m, i);
+	}
+
+	m.size = 0;
+}
+
+func hash_u64(x: ullong): ullong
+{
+	x *= 0xff51afd7ed558ccd;
+	x ^= x >> 32;
+	return x;
+}
+
+func hash_ptr(ptr: void*): ullong
+{
+	return hash_u64((:uintptr)ptr);
+}
+
+func cmp_ptr(key: void*, test: void*): bool
+{
+	return key == test;
+}
+
+func map_init(m: Map*, hash_fn: HashFn, key_cmp_fn: KeyCmpFn)
+{
+	m.hash_fn = hash_fn;
+	m.key_cmp_fn = key_cmp_fn;
+	map_clear(m);
+}
+
+func map_new(): Map*
+{
+	m: Map* = calloc(1, sizeof(Map));
+	map_init(m, DEFAULT_HASH_FN, DEFAULT_KEY_CMP_FN);
+	return m;
+}
+
+func map_free(m: Map*)
+{
+	free(m.entries);
+}
+
+func map__grow(m: Map*, new_cap: usize)
+{
+	new_cap = usize_max(MAP_MIN_SIZE, new_cap);
+	#assert(is_pow2(new_cap));
+
+	new_m: Map = {
+		hash_fn	   	= m.hash_fn ? m.hash_fn : DEFAULT_HASH_FN,
+		key_cmp_fn 	= m.key_cmp_fn ? m.key_cmp_fn : DEFAULT_KEY_CMP_FN,
+		entries		= calloc(new_cap, sizeof(MapEntry)),
+		cap			= new_cap,
+		mask		= new_cap - 1,
+		resize_at	= (:usize)((:double)new_cap * MAP_LOAD_FACTOR)
+	};
+
+	for (i: usize = 0; i < m.cap; i++)
+	{
+		if (!map_entry_is_empty(&m.entries[i]))
+		{
+			map__do_insert(&new_m, m.entries[i].key, m.entries[i].val);
+		}
+	}
+
+	free(m.entries);
+
+	*m = new_m;
+}
+
+func map__get_hash(m: Map *, key: void*): usize
+{
+	hash := m.hash_fn(key);
+	hash |= (hash == 0);		// 0 indicates empty
+	return hash;
+}
+
+func map__find(m: Map*, key: void*, ix_result: usize*): bool
+{
+	if (m.size == 0)
+	{
+		return false;
+	}
+
+	#assert(is_pow2(m.cap));
+	#assert(m.size < m.cap);
+
+	hash := map__get_hash(m, key);
+	ix := map__ideal_ix(m, hash);
+	probe_len: usize = 0;
+
+	while (true)
+	{
+		if (m.entries[ix].hash == 0)
+		{
+			return false;
+		}
+		else if (probe_len > map__probe_len(m, m.entries[ix].hash, ix))
+		{
+			// Can early out here because an element with a longer probe count than probe_len would have been swapped on insert
+			return false;
+		}
+		else if (m.entries[ix].hash == hash && m.key_cmp_fn(m.entries[ix].key, key))
+		{
+			*ix_result = ix;
+			return true;
+		}
+
+		ix = (ix + 1) & m.mask;
+		probe_len++;
+	}
+
+	return false;
+}
+
+func map_has_key(m: Map*, key: void*): bool
+{
+	ix: usize;
+	return map__find(m, key, &ix);
+}
+
+func map_get(m: Map*, key: void*): void*
+{
+	ix: usize;
+	return map__find(m, key, &ix) ? m.entries[ix].val : NULL;
+}
+
+func map_remove(m: Map*, key: void*): bool
+{
+	ix: usize;
+	if (!map__find(m, key, &ix))
+	{
+		return false;
+	}
+
+	while (true)
+	{
+		prev_ix := ix;
+		ix = (ix + 1) & m.mask;
+		if (map_entry_is_empty(&m.entries[ix]) || map__probe_len(m, m.entries[ix].hash, ix) == 0)
+		{
+			map__entry_clear(m, prev_ix);
+			break;
+		}
+		else
+		{
+			m.entries[prev_ix] = m.entries[ix];
+		}
+	}
+
+	m.size--;
+	return true;
+}
+
+func map__create_entry(m: Map*, ix: usize, hash: usize, key: void*, val: void*)
+{
+	m.size++;
+	m.entries[ix].key = key;
+	m.entries[ix].val = val;
+	m.entries[ix].hash = hash;
+}
+
+func map__do_insert(m: Map*, key: void*, val: void*)
+{
+	hash := map__get_hash(m, key);
+	ix := map__ideal_ix(m, hash);
+	probe_len: usize = 0;
+
+	while (true)
+	{
+		if (map_entry_is_empty(&m.entries[ix]))
+		{
+			map__create_entry(m, ix, hash, key, val);
+			return;
+		}
+		else if (m.key_cmp_fn(m.entries[ix].key, key))
+		{
+			m.entries[ix].val = val;
+			m.entries[ix].hash = hash;
+			return;
+		}
+
+		occupant_probe_len := map__probe_len(m, m.entries[ix].hash, ix);
+
+		// If occupant is closer to its ideal slot, insert the new item here and continue looking for a slot for the evicted item
+		if (occupant_probe_len < probe_len)
+		{
+			tmp: MapEntry = m.entries[ix];
+			m.entries[ix].key = key;
+			m.entries[ix].val = val;
+			m.entries[ix].hash = hash;
+			key = tmp.key;
+			val = tmp.val;
+			hash = tmp.hash;
+
+			probe_len = occupant_probe_len;
+		}
+
+		ix = (ix + 1) & m.mask;
+		probe_len++;
+	}
+}
+
+func map_put(m: Map*, key: void*, val: void*)
+{
+	if (m.resize_at <= m.size)
+	{
+		map__grow(m, 2 * m.cap);
+	}
+
+	map__do_insert(m, key, val);
+}

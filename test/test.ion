@@ -1,0 +1,114 @@
+struct Point
+{
+	x, y: int;
+}
+
+func push_point(buf: Point*, p: Point): Point*
+{
+	return buf_push(buf, &p, sizeof(:Point));
+}
+
+func push_int(buf: int*, val: int) : int*
+{
+	return buf_push(buf, &val, sizeof(:int));
+}
+
+func test_queue()
+{
+	point: Point*;
+	q: Queue = {};
+
+	#assert(queue_is_empty(&q));
+	#assert(!dequeue(&q, (:void**)&point));
+
+	point_buf: Point* = NULL;
+	for (i := 0; i < 50; i++)
+	{
+		point_buf = push_point(point_buf, Point{i, i});
+	}
+
+	for (i := 0; i < 50; i++)
+	{
+		enqueue(&q, &point_buf[i]);
+
+		#assert(queue_size(&q) == i + 1);
+		if (is_pow2(i + 1) && (i + 1) >= QUEUE_MIN_SIZE)
+		{
+			#assert(queue_is_full(&q));
+		}
+	}
+
+	for (i := 0; i < 50; i++)
+	{
+		dequeue(&q, (:void**)&point);
+		#assert(point.x == i);
+		#assert(point.y == i);
+	}
+
+	#assert(queue_is_empty(&q));
+	#assert(!dequeue(&q, (:void**)&point));
+}
+
+func test_buf()
+{
+	b: int* = 0;
+	for (i := 0; i < 50; i++)
+	{
+		b = push_int(b, i);
+	}
+
+	for (i := 0; i < buf_len(b); i++)
+	{
+		#assert(b[i] == i);
+	}
+}
+
+
+func test_map()
+{
+	m := map_str_new();
+
+	strings: char*[] = {
+		"string1",
+		"string2",
+		"string3",
+		"string4",
+		"string5",
+		"string6",
+		"string7",
+		"string8",
+		"string9",
+		"string10",
+	};
+
+	copies: char *[] = {
+		"string1",
+		"string2",
+		"string3",
+		"string4",
+		"string5",
+		"string6",
+		"string7",
+		"string8",
+		"string9",
+		"string10",
+	};
+
+	string_count := sizeof(strings) / sizeof(*strings);
+
+	for (i := 0; i < string_count; i++)
+	{
+		map_put(m, strings[i], strings[i]);
+	}
+
+	for (i := 0; i < string_count; i++)
+	{
+		same_ref: char* = map_get(m, strings[i]);
+		#assert(same_ref == strings[i]);
+		#assert(strcmp(same_ref, strings[i]) == 0);
+
+		diff_ref: char* = map_get(m, copies[i]);
+		#assert(diff_ref == strings[i]);
+		#assert(strcmp(diff_ref, strings[i]) == 0);
+	}
+}

@@ -1,0 +1,82 @@
+import libc { malloc, free }
+
+struct Queue
+{
+	data: void**;
+	cap: usize;
+	front, back: usize;
+}
+
+const QUEUE_MIN_SIZE = 8;
+
+func queue_clear(queue: Queue*)
+{
+	queue.front = 0;
+	queue.back = 0;
+}
+
+func queue_free(queue: Queue*)
+{
+	free(queue.data);
+}
+
+func queue_is_empty(queue: Queue*): bool
+{
+	return queue.front == queue.back;
+}
+
+func queue_is_full(queue: Queue*): bool
+{
+	return (queue.back - queue.cap) == queue.front;
+}
+
+func queue_size(queue: Queue*): usize
+{
+	return queue.back - queue.front;
+}
+
+func queue__grow(queue: Queue*)
+{
+	new_cap := next_pow2(usize_max(QUEUE_MIN_SIZE, queue.cap * 2));
+	new_data: void** = malloc(new_cap * sizeof(:void*));
+
+	//printf("growing queue from %zu to %zu\n", queue.cap, new_cap);
+
+	for (i := 0; i < queue_size(queue); i++)
+	{
+		ix := (i + queue.front) & (queue.cap - 1);
+		new_data[i] = queue.data[ix];
+	}
+
+	free(queue.data);
+	new_queue: Queue = { data = new_data, cap = new_cap, front = 0, back = queue_size(queue) };
+	*queue = new_queue;
+}
+
+func enqueue(queue: Queue*, item: void*)
+{
+	//printf("enqueue: queue size is %zu / %zu\n", queue_size(queue), queue.cap);
+	if (queue_is_full(queue))
+	{
+		queue__grow(queue);
+	}
+
+	#assert(is_pow2(queue.cap));
+
+	queue.data[queue.back & (queue.cap - 1)] = item;
+	queue.back++;
+}
+
+func dequeue(queue: Queue*, item: void**): bool
+{
+	if (queue_is_empty(queue))
+	{
+		return false;
+	}
+
+	#assert(is_pow2(queue.cap));
+
+	*item = queue.data[queue.front & (queue.cap - 1)];
+	queue.front++;
+	return true;
+}

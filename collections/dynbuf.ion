@@ -1,0 +1,69 @@
+import libc { realloc, memcpy }
+
+struct BufHdr
+{
+	cap, len: usize;
+	buf: char[1];
+}
+
+func buf__hdr(buf: void*): BufHdr*
+{
+	return (:BufHdr*)((:char *)(buf) - offsetof(BufHdr, buf));
+}
+
+func buf_cap(buf: void*): usize
+{
+	return buf ? buf__hdr(buf).cap : 0;
+}
+
+func buf_len(buf: void*): usize
+{
+	return buf ? buf__hdr(buf).len : 0;
+}
+
+func buf_end(buf: void*, elem_size: usize): void*
+{
+	return (:char*)buf + (buf_len(buf) * elem_size);
+}
+
+func buf__grow(buf: void*, new_len: usize, elem_size: usize): void*
+{
+	#assert(buf_cap(buf) <= (USIZE_MAX - 1) / 2);
+	new_cap := usize_max(8, usize_max(1 + 2 * buf_cap(buf), new_len));
+	#assert(new_len <= new_cap);
+	#assert(new_cap <= (USIZE_MAX - offsetof(BufHdr, buf)) / elem_size);
+	new_size := offsetof(BufHdr, buf) + new_cap * elem_size;
+	new_hdr: BufHdr*;
+
+	if (buf)
+	{
+		new_hdr = realloc(buf__hdr(buf), new_size);
+	}
+	else
+	{
+		new_hdr = malloc(new_size);
+		new_hdr.len = 0;
+	}
+	new_hdr.cap = new_cap;
+	return (:void*)new_hdr.buf;
+}
+
+func buf_fit(buf: void*, size: usize, elem_size: usize): void*
+{
+	if (size <= buf_cap(buf))
+	{
+		return buf;
+	}
+
+	return buf__grow(buf, size, elem_size);
+}
+
+func buf_push(buf: void*, val: void*, elem_size: usize): void*
+{
+	buf = buf_fit(buf, buf_len(buf) + 1, elem_size);
+	memcpy((:char*)buf + (buf_len(buf) * elem_size), val, elem_size);
+	hdr := buf__hdr(buf);
+	hdr.len++;
+	return buf;
+}
+

@@ -1,0 +1,32 @@
+import libc { strlen, strcmp }
+
+func hash_bytes(buf: uint8*, len: usize): ullong
+{
+	x: ullong = 0xcbf29ce484222325;
+	for (i := 0; i < len; i++)
+	{
+		x ^= buf[i];
+		x *= 0x100000001b3;
+		x ^= x >> 32;
+	}
+	return x;
+}
+
+func hash_str(ptr: void*): ullong
+{
+	return hash_bytes((:uint8*)ptr, strlen((:char*)ptr));
+}
+
+func cmp_str(key: void*, test: void*): bool
+{
+	a: char* = (:char*)key;
+	b: char* = (:char*)test;
+	return strcmp(a, b) == 0;
+}
+
+func map_str_new(): Map*
+{
+	m: Map* = calloc(1, sizeof(Map));
+	map_init(m, hash_str, cmp_str);
+	return m;
+}
