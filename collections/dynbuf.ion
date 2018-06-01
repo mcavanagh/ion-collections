@@ -1,4 +1,4 @@
-import libc { realloc, memcpy }
+import libc { realloc, memcpy, free }
 
 struct BufHdr
 {
@@ -9,6 +9,14 @@ struct BufHdr
 func buf__hdr(buf: void*): BufHdr*
 {
 	return (:BufHdr*)((:char *)(buf) - offsetof(BufHdr, buf));
+}
+
+func buf_free(buf: void*)
+{
+	if (buf)
+	{
+		free(buf__hdr(buf));
+	}
 }
 
 func buf_cap(buf: void*): usize

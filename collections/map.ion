@@ -2,8 +2,8 @@ import libc { calloc, free }
 
 const MAP_LOAD_FACTOR = 0.9;
 const MAP_MIN_SIZE = 8;
-var DEFAULT_HASH_FN = hash_ptr;
-var DEFAULT_KEY_CMP_FN = cmp_ptr;
+var DEFAULT_HASH_FN: HashFn = hash_ptr;
+var DEFAULT_KEY_CMP_FN: KeyCmpFn = cmp_ptr;
 
 struct MapEntry
 {
@@ -61,16 +61,16 @@ func map_clear(m: Map*)
 	m.size = 0;
 }
 
-func hash_u64(x: ullong): ullong
+func hash_u64(x: ullong): usize
 {
 	x *= 0xff51afd7ed558ccd;
 	x ^= x >> 32;
 	return x;
 }
 
-func hash_ptr(ptr: void*): ullong
+func hash_ptr(ptr: void*): usize
 {
-	return hash_u64((:uintptr)ptr);
+	return usize(hash_u64((:uintptr)ptr));
 }
 
 func cmp_ptr(key: void*, test: void*): bool
